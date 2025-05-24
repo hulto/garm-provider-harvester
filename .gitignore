@@ -1,0 +1,24 @@
+# Go build outputs
+bin/
+*.exe
+*.test
+
+# Go vendor directory
+vendor/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# IDE/Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
+
+# Coverage
+coverage.out
+coverage.html

@@ -1,0 +1,22 @@
+# Sample configuration for the GARM Harvester Provider
+
+# Path to the kubeconfig file for accessing the Harvester cluster.
+# If commented out or empty, the provider will attempt to use in-cluster authentication
+# (if running inside a Kubernetes pod in the Harvester cluster) or rely on
+# environment variables like KUBECONFIG.
+# Example: "/home/user/.kube/harvester_config"
+# kubeconfig_path = ""
+
+# Specific kubeconfig context to use from the kubeconfig file.
+# If commented out or empty, the current context in the kubeconfig will be used.
+# Example: "my-harvester-cluster"
+# kube_context = ""
+
+# Default Kubernetes namespace where Harvester VMs and related resources
+# (like VirtualMachineImages, networks) are managed.
+# If commented out or empty, it defaults to "default".
+# harvester_namespace = "default"
+
+# Example of other potential settings (currently not implemented in the provider):
+# max_instances_per_pool = 10
+# default_vm_flavor = "small"
