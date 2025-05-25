@@ -1,1 +1,0 @@
-# garm-provider-harvester
