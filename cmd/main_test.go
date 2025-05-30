@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"garm-provider-harvester/pkg/utils"
+	"log/slog"
 	"testing"
 )
 
 func TestMapEnum(t *testing.T) {
 	r, _ := utils.NewGarmCommand("CreateInstance")
-	fmt.Println("Win:", r)
+	slog.Info("Win:", r)
 }
