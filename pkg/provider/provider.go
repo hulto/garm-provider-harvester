@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudbase/garm-provider-common/cloudconfig"
 	"github.com/cloudbase/garm-provider-common/params"
 	"github.com/harvester/harvester/pkg/builder"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
@@ -83,8 +85,34 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	}
 
 	// create vm
-	cloudInitSource, _, err := utils.BuildCloudInit(namespace, bootstrapParams)
-	slog.Info("cloudInitSource", cloudInitSource.UserData)
+	var runnerTool params.RunnerApplicationDownload
+	archMapping := map[string]string{
+		"x64": "amd64",
+	}
+	for _, tool := range bootstrapParams.Tools {
+		if strings.EqualFold(*tool.OS, string(bootstrapParams.OSType)) &&
+			strings.EqualFold(archMapping[*tool.Architecture], string(bootstrapParams.OSArch)) {
+			runnerTool = tool
+		}
+	}
+	cloudInitRaw, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
+	if err != nil {
+		return params.ProviderInstance{}, err
+	}
+	cloudConfigSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{},
+	}
+	if len(cloudInitRaw) > utils.CloudInitNoCloudLimitSize {
+		cloudConfigSecret.Data["userdata"] = []byte(cloudInitRaw)
+	}
+	cloudInitSource := builder.CloudInitSource{
+		CloudInitType:      builder.CloudInitTypeNoCloud,
+		UserDataSecretName: fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
+	}
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
@@ -101,7 +129,7 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	vmBuilder := builder.NewVMBuilder("garm-provider").NetworkInterface("nic-0", "virtio", "", "masquerade", "").
 		Namespace(namespace).Name(strings.ToLower(bootstrapParams.Name)).CPU(cores).Memory(memory).
 		PVCDisk("rootdisk", builder.DiskBusVirtio, false, false, 1, disk, "", pvcOption).
-		CloudInitDisk(builder.CloudInitDiskName, builder.DiskBusVirtio, false, 0, *cloudInitSource).
+		CloudInitDisk(builder.CloudInitDiskName, builder.DiskBusVirtio, false, 0, cloudInitSource).
 		EvictionStrategy(true).RunStrategy(kubevirtv1.RunStrategyRerunOnFailure).Labels(labels)
 
 	vm, err := vmBuilder.VM()
@@ -119,6 +147,19 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
+	cloudConfigSecret.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: vm.APIVersion,
+			Kind:       vm.Kind,
+			Name:       strings.ToLower(vm.Name),
+			UID:        res.UID,
+		},
+	}
+	_, err = h.KubeClient.CoreV1().Secrets(namespace).Create(ctx, &cloudConfigSecret, metav1.CreateOptions{})
+	if err != nil {
+		return params.ProviderInstance{}, err
+	}
+
 	return params.ProviderInstance{
 		Name: res.Name,
 	}, nil

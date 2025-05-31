@@ -1,5 +1,5 @@
   {
-    "name": "garm-ny9HeeQYw3rl",
+    "name": "garm-ny9HeeQYw1rl",
     "tools": [
       {
         "os": "osx",
@@ -58,6 +58,9 @@
     "extra_specs": {
       "my_custom_config": "some_value"
     },
+    "ssh-keys": [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMOTygNEK4LTfZwV1Pqf9vX5AECGXDe3paaFhiJsJvUU hulto@axe.local"
+    ],
     "ca-cert-bundle": null,
     "github-runner-group": "my_group",
     "os_type": "linux",
