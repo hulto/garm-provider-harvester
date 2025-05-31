@@ -30,22 +30,22 @@ type harvesterProvider struct {
 
 // GetConfigJSONSchema implements executionv011.ExternalProvider.
 func (c *harvesterProvider) GetConfigJSONSchema(ctx context.Context) (string, error) {
-	panic("unimplemented")
+	return "", nil
 }
 
 // GetExtraSpecsJSONSchema implements executionv011.ExternalProvider.
 func (c *harvesterProvider) GetExtraSpecsJSONSchema(ctx context.Context) (string, error) {
-	panic("unimplemented")
+	return "", nil
 }
 
 // GetSupportedInterfaceVersions implements executionv011.ExternalProvider.
 func (c *harvesterProvider) GetSupportedInterfaceVersions(ctx context.Context) []string {
-	panic("unimplemented")
+	return []string{"v0.1.0", "v0.1.1"}
 }
 
 // ValidatePoolInfo implements executionv011.ExternalProvider.
 func (c *harvesterProvider) ValidatePoolInfo(ctx context.Context, image string, flavor string, providerConfig string, extraspecs string) error {
-	panic("unimplemented")
+	return nil
 }
 
 var _ execution.ExternalProvider = &harvesterProvider{}

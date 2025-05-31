@@ -39,6 +39,7 @@ require (
 	github.com/longhorn/backupstore v0.0.0-20250227220202-651bd33886fe // indirect
 	github.com/longhorn/go-common-libs v0.0.0-20250215052214-151615b29f8e // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/minio/sio v0.4.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
@@ -51,7 +52,9 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/slok/goresilience v0.2.0 // indirect
+	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/kube-aggregator v0.31.1 // indirect
 	k8s.io/mount-utils v0.32.2 // indirect
 	kubevirt.io/client-go v1.4.0 // indirect

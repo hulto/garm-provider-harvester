@@ -4,16 +4,14 @@ import (
 	"context"
 	"fmt"
 	"garm-provider-harvester/pkg/utils"
-	"log/slog"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/cloudbase/garm-provider-common/cloudconfig"
 	"github.com/cloudbase/garm-provider-common/params"
+	"github.com/cloudbase/garm-provider-common/util"
 	"github.com/harvester/harvester/pkg/builder"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
@@ -22,43 +20,16 @@ const version = "v0.0.1"
 
 var namespace = "garm-runners"
 
-const (
-	defaultVMGenerateName = "harv-"
-	defaultVMNamespace    = "default"
-
-	defaultVMCPUCores = 1
-	defaultVMMemory   = "256Mi"
-
-	HarvesterAPIGroup                                     = "harvesterhci.io"
-	LabelAnnotationPrefixHarvester                        = HarvesterAPIGroup + "/"
-	LabelKeyVirtualMachineCreator                         = LabelAnnotationPrefixHarvester + "creator"
-	LabelKeyVirtualMachineName                            = LabelAnnotationPrefixHarvester + "vmName"
-	AnnotationKeyVirtualMachineSSHNames                   = LabelAnnotationPrefixHarvester + "sshNames"
-	AnnotationKeyVirtualMachineWaitForLeaseInterfaceNames = LabelAnnotationPrefixHarvester + "waitForLeaseInterfaceNames"
-	AnnotationKeyVirtualMachineDiskNames                  = LabelAnnotationPrefixHarvester + "diskNames"
-	AnnotationKeyImageID                                  = LabelAnnotationPrefixHarvester + "imageId"
-
-	AnnotationPrefixCattleField = "field.cattle.io/"
-	LabelPrefixHarvesterTag     = "tag.harvesterhci.io/"
-	AnnotationKeyDescription    = AnnotationPrefixCattleField + "description"
-)
-
 func (h harvesterProvider) ListInstances(ctx context.Context, poolID string) ([]params.ProviderInstance, error) {
 	opts := v1.ListOptions{}
-	vms, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).List(ctx, opts)
+	vms, err := h.HarvesterClient.KubevirtV1().VirtualMachineInstances(namespace).List(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	var res []params.ProviderInstance
 	for _, vm := range vms.Items {
 		if vm.Labels["pool-id"] == poolID || true {
-			res = append(res, params.ProviderInstance{
-				ProviderID: string(vm.UID),
-				Name:       vm.Name,
-				OSArch:     params.OSArch(vm.Spec.Template.Spec.Architecture),
-				OSType:     params.OSType(vm.Labels["harvesterhci.io/os"]),
-				Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
-			})
+			res = append(res, utils.HarvesterVmToInstance(&vm))
 		}
 	}
 	return res, nil
@@ -67,55 +38,66 @@ func (h harvesterProvider) ListInstances(ctx context.Context, poolID string) ([]
 // CreateInstance implements executionv011.ExternalProvider.
 func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams params.BootstrapInstance) (params.ProviderInstance, error) {
 
-	coresStr, memory, disk, err := utils.ParseFlavor(bootstrapParams.Flavor)
-	if err != nil {
-		return params.ProviderInstance{}, err
-	}
-	cores, err := strconv.Atoi(coresStr)
+	// Get resources
+	cores, memory, disk, err := utils.ParseFlavor(bootstrapParams.Flavor)
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
 
+	// Get labels
 	labels := map[string]string{
-		"harvesterhci.io/os": "Linux",
-		"pool-id":            bootstrapParams.PoolID,
-	}
-	for _, labelStr := range bootstrapParams.Labels {
-		slog.Info("label: ", labelStr)
+		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "os-type"): string(bootstrapParams.OSType),
+		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "pool-id"): bootstrapParams.PoolID,
 	}
 
-	// create vm
-	var runnerTool params.RunnerApplicationDownload
-	archMapping := map[string]string{
-		"x64": "amd64",
+	// get tool
+	gitArch, err := util.ResolveToGithubArch(string(bootstrapParams.OSArch))
+	if err != nil {
+		return params.ProviderInstance{}, err
 	}
+
+	var runnerTool params.RunnerApplicationDownload
 	for _, tool := range bootstrapParams.Tools {
 		if strings.EqualFold(*tool.OS, string(bootstrapParams.OSType)) &&
-			strings.EqualFold(archMapping[*tool.Architecture], string(bootstrapParams.OSArch)) {
+			strings.EqualFold(*tool.Architecture, gitArch) {
 			runnerTool = tool
 		}
 	}
-	cloudInitRaw, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
+	if runnerTool == (params.RunnerApplicationDownload{}) {
+		return params.ProviderInstance{}, fmt.Errorf("no tools found for %s %s", gitArch, string(bootstrapParams.OSType))
+	}
+
+	// Cloud init setup
+	userData, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
-	cloudConfigSecret := corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
-			Namespace: namespace,
-		},
-		Data: map[string][]byte{},
-	}
-	if len(cloudInitRaw) > utils.CloudInitNoCloudLimitSize {
-		cloudConfigSecret.Data["userdata"] = []byte(cloudInitRaw)
-	}
-	cloudInitSource := builder.CloudInitSource{
-		CloudInitType:      builder.CloudInitTypeNoCloud,
-		UserDataSecretName: fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
+	var cloudConfigSecret corev1.Secret
+	var cloudInitSource builder.CloudInitSource
+	if len(userData) > utils.CloudInitNoCloudLimitSize {
+		cloudConfigSecret = corev1.Secret{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
+				Namespace: namespace,
+			},
+			Data: map[string][]byte{},
+		}
+		cloudInitSource = builder.CloudInitSource{
+			CloudInitType:      builder.CloudInitTypeNoCloud,
+			UserDataSecretName: fmt.Sprintf("%s-%s", strings.ToLower(bootstrapParams.Name), "cloudinit"),
+		}
+		cloudConfigSecret.Data["userdata"] = []byte(userData)
+	} else {
+		cloudInitSource = builder.CloudInitSource{
+			CloudInitType: builder.CloudInitTypeNoCloud,
+			UserData:      userData,
+		}
 	}
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
+
+	// Boot Disk
 	storageclassname := fmt.Sprintf("longhorn-%s", "noble-server-cloudimg-amd64")
 	pvcOption := &builder.PersistentVolumeClaimOption{
 		ImageID:          bootstrapParams.Image,
@@ -126,6 +108,8 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 			"terraform-provider-harvester-auto-delete": "true",
 		},
 	}
+
+	// Build VM
 	vmBuilder := builder.NewVMBuilder("garm-provider").NetworkInterface("nic-0", "virtio", "", "masquerade", "").
 		Namespace(namespace).Name(strings.ToLower(bootstrapParams.Name)).CPU(cores).Memory(memory).
 		PVCDisk("rootdisk", builder.DiskBusVirtio, false, false, 1, disk, "", pvcOption).
@@ -139,35 +123,42 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	vm.Kind = kubevirtv1.VirtualMachineGroupVersionKind.Kind
 	vm.APIVersion = kubevirtv1.GroupVersion.String()
 
-	// newVm := builder.NewVMBuilder("garm").Namespace(namespace).Labels(labels).
-	// 	Name("garm-test").CPU(defaultVMCPUCores).Memory(defaultVMMemory).Run(true)
+	// Create VM
 	opts := v1.CreateOptions{}
 	var res *kubevirtv1.VirtualMachine
 	res, err = h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Create(ctx, vm, opts)
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
-	cloudConfigSecret.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: vm.APIVersion,
-			Kind:       vm.Kind,
-			Name:       strings.ToLower(vm.Name),
-			UID:        res.UID,
-		},
-	}
-	_, err = h.KubeClient.CoreV1().Secrets(namespace).Create(ctx, &cloudConfigSecret, metav1.CreateOptions{})
-	if err != nil {
-		return params.ProviderInstance{}, err
+
+	// Create cloud-init secret
+	if cloudConfigSecret.Data != nil {
+		cloudConfigSecret.OwnerReferences = []v1.OwnerReference{
+			{
+				APIVersion: vm.APIVersion,
+				Kind:       vm.Kind,
+				Name:       strings.ToLower(vm.Name),
+				UID:        res.UID,
+			},
+		}
+		_, err = h.KubeClient.CoreV1().Secrets(namespace).Create(ctx, &cloudConfigSecret, v1.CreateOptions{})
+		if err != nil {
+			return params.ProviderInstance{}, err
+		}
 	}
 
 	return params.ProviderInstance{
-		Name: res.Name,
+		ProviderID: string(res.UID),
+		Name:       res.Name,
+		OSArch:     params.OSArch(res.Spec.Template.Spec.Architecture),
+		OSType:     params.OSType(params.OSType(vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "os-type")])),
+		Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
 	}, nil
 }
 
 // DeleteInstance implements executionv011.ExternalProvider.
 func (h *harvesterProvider) DeleteInstance(ctx context.Context, instance string) error {
-	err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Delete(ctx, instance, v1.DeleteOptions{})
+	err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Delete(ctx, strings.ToLower(instance), v1.DeleteOptions{})
 	if err != nil {
 		return err
 	}
@@ -177,17 +168,11 @@ func (h *harvesterProvider) DeleteInstance(ctx context.Context, instance string)
 // GetInstance implements executionv011.ExternalProvider.
 func (h *harvesterProvider) GetInstance(ctx context.Context, instance string) (params.ProviderInstance, error) {
 	opts := v1.GetOptions{}
-	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, instance, opts)
+	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachineInstances(namespace).Get(ctx, instance, opts)
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
-	return params.ProviderInstance{
-		ProviderID: string(vm.UID),
-		Name:       vm.Name,
-		OSArch:     params.OSArch(vm.Spec.Template.Spec.Architecture),
-		OSType:     params.OSType(vm.Labels["harvesterhci.io/os"]),
-		Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
-	}, nil
+	return utils.HarvesterVmToInstance(vm), nil
 }
 
 // GetVersion implements executionv011.ExternalProvider.
@@ -214,7 +199,7 @@ func (h *harvesterProvider) RemoveAllInstances(ctx context.Context) error {
 // Start implements executionv011.ExternalProvider.
 func (h *harvesterProvider) Start(ctx context.Context, instance string) error {
 	opts := v1.GetOptions{}
-	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, instance, opts)
+	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, strings.ToLower(instance), opts)
 	if err != nil {
 		return err
 	}
@@ -231,7 +216,7 @@ func (h *harvesterProvider) Start(ctx context.Context, instance string) error {
 // Stop implements executionv011.ExternalProvider.
 func (h *harvesterProvider) Stop(ctx context.Context, instance string, force bool) error {
 	opts := v1.GetOptions{}
-	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, instance, opts)
+	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(namespace).Get(ctx, strings.ToLower(instance), opts)
 	if err != nil {
 		return err
 	}
