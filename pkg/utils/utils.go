@@ -43,7 +43,7 @@ users:
   - >-
     %s`
 	CloudInitNoCloudLimitSize = 2048
-	defaultVMGenerateName     = "harv-"
+	defaultVMGenerateName     = "garm-"
 	defaultVMNamespace        = "default"
 
 	defaultVMCPUCores = 1

@@ -16,9 +16,12 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-const version = "v0.0.1"
+const (
+	osTypeCost = "os-type"
+	poolIdConst = "pool-id"
+)
 
-var namespace = "garm-runners"
+var Version = "v0.0.0-unknown"
 
 func (h harvesterProvider) ListInstances(ctx context.Context, poolID string) ([]params.ProviderInstance, error) {
 	opts := v1.ListOptions{}
@@ -28,7 +31,7 @@ func (h harvesterProvider) ListInstances(ctx context.Context, poolID string) ([]
 	}
 	var res []params.ProviderInstance
 	for _, vm := range vms.Items {
-		if vm.Labels["pool-id"] == poolID || true {
+		if vm.Labels[poolIdConst] == poolID || true {
 			res = append(res, utils.HarvesterVmToInstance(&vm))
 		}
 	}
@@ -46,8 +49,8 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 
 	// Get labels
 	labels := map[string]string{
-		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "os-type"): string(bootstrapParams.OSType),
-		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "pool-id"): bootstrapParams.PoolID,
+		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, osTypeConst): string(bootstrapParams.OSType),
+		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, poolIdConst): bootstrapParams.PoolID,
 	}
 
 	// get tool
@@ -98,6 +101,8 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	}
 
 	// Boot Disk
+	// TODO: Put image in config
+	// TODO: Put longhorn in const
 	storageclassname := fmt.Sprintf("longhorn-%s", "noble-server-cloudimg-amd64")
 	pvcOption := &builder.PersistentVolumeClaimOption{
 		ImageID:          bootstrapParams.Image,
@@ -151,7 +156,7 @@ func (h *harvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 		ProviderID: string(res.UID),
 		Name:       res.Name,
 		OSArch:     params.OSArch(res.Spec.Template.Spec.Architecture),
-		OSType:     params.OSType(params.OSType(vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, "os-type")])),
+		OSType:     params.OSType(params.OSType(vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, osTypeConst)])),
 		Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
 	}, nil
 }
@@ -177,7 +182,7 @@ func (h *harvesterProvider) GetInstance(ctx context.Context, instance string) (p
 
 // GetVersion implements executionv011.ExternalProvider.
 func (h *harvesterProvider) GetVersion(ctx context.Context) string {
-	return version
+	return Version
 }
 
 // RemoveAllInstances implements executionv011.ExternalProvider.

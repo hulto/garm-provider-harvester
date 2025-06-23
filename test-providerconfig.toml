@@ -1,0 +1,5 @@
+namespace = "garm-runners"
+storageclassname = "harvester-longhorn"
+
+[credentials]
+kubeconfig = "/home/vscode/.kubeconfig"

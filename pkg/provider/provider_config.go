@@ -28,6 +28,18 @@ type harvesterProvider struct {
 	ControllerID              string
 }
 
+type Credentials struct {
+	KubeConfig string `toml:"kubeconfig"`
+}
+
+// TODO: Add disk size to override VM image size disk.
+type Config struct {
+	Namespace string `toml:"namespace"`
+	Credentials Credentials `toml:"credentials"`
+	StorageClassName string `toml:"storageclassname"`
+}
+
+
 // GetConfigJSONSchema implements executionv011.ExternalProvider.
 func (c *harvesterProvider) GetConfigJSONSchema(ctx context.Context) (string, error) {
 	return "", nil
@@ -68,12 +80,22 @@ func restConfigFromBase64(kubeConfigBase64 string) (*rest.Config, error) {
 	return clientcmd.RESTConfigFromKubeConfig(bytes)
 }
 
-func NewHarvesterProvider(kubeConfig string, garmControllerId string) (execution.ExternalProvider, error) { //(*Client, error) {
+func NewHarvesterProvider(providerConfig string, garmControllerId string) (execution.ExternalProvider, error) {
 	var (
 		restConfig *rest.Config
 		err        error
 	)
 
+	var config Config
+	if _, err := toml.DecodeFile(providerConfig, &config); err != nil {
+		return nil, fmt.Errorf("error decoding config: %w", err)
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("error validating config: %w", err)
+	}
+
+	kubeConfig := config.kubeConfig
 	if restConfig, err = restConfigFromBase64(kubeConfig); err != nil {
 		if restConfig, err = restConfigFromFile(kubeConfig); err != nil {
 			return nil, err

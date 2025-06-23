@@ -6,6 +6,11 @@
 	"image": "mcr.microsoft.com/devcontainers/go:1.24-bookworm",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/tfenv-homebrew:1": {}
+	},
+	"vscode": {
+		"extensions": [
+			"golang.go"
+		]
 	}
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
