@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"garm-provider-harvester/pkg/config"
 	"garm-provider-harvester/pkg/provider"
 
 	"github.com/cloudbase/garm-provider-common/execution"
@@ -36,8 +37,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	slog.Info(fmt.Sprintf("executionEnv.ProviderConfigFile: %s", executionEnv.ProviderConfigFile))
 
-	prov, err := provider.NewHarvesterProvider(executionEnv.ProviderConfigFile, executionEnv.ControllerID)
+	provConfig, err := config.NewProviderConfig(executionEnv.ProviderConfigFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if (provConfig == config.Config{}) {
+		log.Fatalf("%s created an empty config", executionEnv.ProviderConfigFile)
+	}
+
+	prov, err := provider.NewHarvesterProvider(provConfig, executionEnv.ControllerID)
 	if err != nil {
 		log.Fatal(err)
 	}

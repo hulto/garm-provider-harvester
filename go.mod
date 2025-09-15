@@ -15,7 +15,9 @@ replace (
 )
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/harvester/harvester v1.5.0
+	github.com/stretchr/testify v1.10.0
 	k8s.io/apimachinery v0.32.2
 	k8s.io/client-go v12.0.0+incompatible
 )
@@ -47,11 +49,13 @@ require (
 	github.com/openshift/api v0.0.0 // indirect
 	github.com/openshift/client-go v0.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/slok/goresilience v0.2.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
