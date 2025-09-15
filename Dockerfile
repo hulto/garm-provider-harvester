@@ -1,4 +1,4 @@
-FROM docker.io/golang:alpine
+FROM docker.io/golang:alpine AS build
 
 WORKDIR /root
 USER root
@@ -14,3 +14,9 @@ RUN chmod +x /build-static.sh
 
 CMD ["/bin/sh"]
 
+FROM ghcr.io/cloudbase/garm:nightly AS release
+ARG rev
+COPY build/$rev/linux/amd64/garm-provider-harvester /opt/garm/providers.d/garm-provider-harvester
+RUN chmod 755 /opt/garm/providers.d/garm-provider-harvester
+
+ENTRYPOINT ["/bin/garm", "-config", "/etc/garm/config.toml"]

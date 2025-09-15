@@ -9,6 +9,7 @@ IMAGE_TAG = garm-provider-build
 USER_ID=$(shell ((docker --version | grep -q podman) && echo "0" || id -u))
 USER_GROUP=$(shell ((docker --version | grep -q podman) && echo "0" || id -g))
 GARM_PROVIDER_NAME := garm-provider-harvester
+GIT_REV=$(shell (git describe --tags --match='v[0-9]*' --dirty --always))
 
 default: build
 
@@ -22,10 +23,12 @@ clean: ## Clean up build artifacts
 
 build-static:
 	@echo Building
-	docker build --tag $(IMAGE_TAG) .
+	docker build --target build --tag $(IMAGE_TAG) .
 	mkdir -p build
-	docker run --rm -e GARM_PROVIDER_NAME=$(GARM_PROVIDER_NAME) -e USER_ID=$(USER_ID) -e USER_GROUP=$(USER_GROUP) -v $(PWD)/build:/build/output:z -v $(PWD):/build/$(GARM_PROVIDER_NAME):z $(IMAGE_TAG) /build-static.sh
+	docker run --rm -e GARM_PROVIDER_NAME=$(GARM_PROVIDER_NAME) -e USER_ID=$(USER_ID) -e USER_GROUP=$(USER_GROUP) -v $(PWD)/build:/build/output:z -v $(PWD):/build/$(GARM_PROVIDER_NAME):z $(IMAGE_TAG) touch /build/output/win
 	@echo Binaries are available in $(PWD)/build
+	docker build --target release --build-arg rev=$(GIT_REV) --tag $(IMAGE_TAG)-release .
+	@echo Docker image is tagged as $(IMAGE_TAG)-release
 
 test: install-lint-deps verify go-test
 
