@@ -14,7 +14,7 @@ RUN chmod +x /build-static.sh
 
 CMD ["/bin/sh"]
 
-FROM ghcr.io/cloudbase/garm:nightly AS release
+FROM ghcr.io/cloudbase/garm:v0.1.6@sha256:d13499ea49f7a0433ac2085205bd82498b9411977d32805eec115aab833ebcd8 AS release
 ARG rev
 COPY build/$rev/linux/amd64/garm-provider-harvester /opt/garm/providers.d/garm-provider-harvester
 RUN chmod 755 /opt/garm/providers.d/garm-provider-harvester
