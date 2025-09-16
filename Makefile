@@ -23,11 +23,11 @@ clean: ## Clean up build artifacts
 
 build-static:
 	@echo Building
-	docker build --target build --tag $(IMAGE_TAG) .
+	docker build --tag $(IMAGE_TAG) .
 	mkdir -p build
-	docker run --rm -e GARM_PROVIDER_NAME=$(GARM_PROVIDER_NAME) -e USER_ID=$(USER_ID) -e USER_GROUP=$(USER_GROUP) -v $(PWD)/build:/build/output:z -v $(PWD):/build/$(GARM_PROVIDER_NAME):z $(IMAGE_TAG) touch /build/output/win
+	docker run --rm -e GARM_PROVIDER_NAME=$(GARM_PROVIDER_NAME) -e USER_ID=$(USER_ID) -e USER_GROUP=$(USER_GROUP) -v $(PWD)/build:/build/output:z -v $(PWD):/build/$(GARM_PROVIDER_NAME):z $(IMAGE_TAG) /build-static.sh
 	@echo Binaries are available in $(PWD)/build
-	docker build --target release --build-arg rev=$(GIT_REV) --tag $(IMAGE_TAG)-release .
+	docker build --build-arg rev=$(GIT_REV) --tag $(IMAGE_TAG)-release --file ./Dockerfile.release .
 	@echo Docker image is tagged as $(IMAGE_TAG)-release
 
 test: install-lint-deps verify go-test
