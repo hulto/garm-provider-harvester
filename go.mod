@@ -55,7 +55,6 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/slok/goresilience v0.2.0 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

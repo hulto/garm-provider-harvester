@@ -1,4 +1,4 @@
 namespace = "garm-runners"
 
 [credentials]
-    kubeconfig = "/home/vscode/.kubeconfig"
+    kubeconfig = "/etc/kubeconfig/kubeconfig.yaml"

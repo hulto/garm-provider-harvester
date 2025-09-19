@@ -8,6 +8,7 @@ import (
 	"garm-provider-harvester/pkg/config"
 	"garm-provider-harvester/pkg/utils"
 	"log/slog"
+	"os"
 	"reflect"
 	"strings"
 
@@ -15,7 +16,6 @@ import (
 	harvnetworkclient "github.com/harvester/harvester-network-controller/pkg/generated/clientset/versioned"
 	harvclient "github.com/harvester/harvester/pkg/generated/clientset/versioned"
 	"github.com/mitchellh/go-homedir"
-	"github.com/rancher/wrangler/pkg/kubeconfig"
 	kubeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	storageclient "k8s.io/client-go/kubernetes/typed/storage/v1"
@@ -53,7 +53,7 @@ var Version = "v0.0.0-unknown"
 func restConfigFromBase64(kubeConfigBase64 string) (*rest.Config, error) {
 	bytes, err := base64.StdEncoding.DecodeString(kubeConfigBase64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode base64 string with error: %s", err.Error())
 	}
 	return clientcmd.RESTConfigFromKubeConfig(bytes)
 }
@@ -64,7 +64,16 @@ func restConfigFromFile(kubeConfig string) (*rest.Config, error) {
 		return nil, err
 	}
 
-	clientConfig := kubeconfig.GetNonInteractiveClientConfig(clientConfigPath)
+	data, err := os.ReadFile(clientConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read kubeconfig %.80s with error: %s", kubeConfig, err.Error())
+	}
+
+	clientConfig, err := clientcmd.NewClientConfigFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config from %.80s with error: %s", kubeConfig, err.Error())
+	}
+
 	return clientConfig.ClientConfig()
 }
 
@@ -75,14 +84,16 @@ func NewHarvesterProvider(config config.Config, garmControllerId string) (execut
 		restConfig *rest.Config
 		err        error
 	)
-
+	slog.Info(fmt.Sprintf("Creating new harvester provider: %s", garmControllerId))
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("error validating config: %w", err)
 	}
 
 	kubeConfig := config.Credentials.KubeConfig
 	if restConfig, err = restConfigFromBase64(kubeConfig); err != nil {
+		slog.Info("Not base64")
 		if restConfig, err = restConfigFromFile(kubeConfig); err != nil {
+			slog.Info("Not file")
 			return nil, err
 		}
 	}
@@ -155,14 +166,15 @@ type ImageList struct {
 	Items []Image `json:"items"`
 }
 
+// BACKING_IMAGE=$(./kubectl get backingimages.longhorn.io -n longhorn-system -o jsonpath='{.items[?(@.metadata.annotations.harvesterhci\.io\/imageId == "harvester-public/ubuntu-server-noble-24.04")].metadata.name}')
 func (h *HarvesterProvider) getBackingImageName(ctx context.Context, imageName string) (string, error) {
 	l, err := h.KubeClient.RESTClient().Get().AbsPath("/apis/longhorn.io/v1beta2/namespaces/longhorn-system/backingimages").DoRaw(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to query backing images for %s: %s", imageName, err)
 	}
 	imagesList := &ImageList{}
 	if err := json.Unmarshal(l, &imagesList); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal imagelist JSON for %s: %s", imageName, err)
 	}
 	for _, img := range imagesList.Items {
 		if img.Metadata.Annotations.ImageId == imageName {
@@ -172,10 +184,11 @@ func (h *HarvesterProvider) getBackingImageName(ctx context.Context, imageName s
 	return "", fmt.Errorf("unable to find backing image for %s", imageName)
 }
 
+// ./kubectl get storageclass -o jsonpath='{.items[?(@.parameters.backingImage == "'$BACKING_IMAGE'")].metadata.name}'
 func (h *HarvesterProvider) getStorageClass(ctx context.Context, backingImage string) (string, error) {
 	sc, err := h.KubeClient.StorageV1().StorageClasses().List(ctx, v1.ListOptions{})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to query storage class for backingimage %s: %s", backingImage, err)
 	}
 	for _, s := range sc.Items {
 		val, ok := s.Parameters["backingImage"]
@@ -192,7 +205,7 @@ func (h *HarvesterProvider) getStorageClass(ctx context.Context, backingImage st
 
 // CreateInstance implements executionv011.ExternalProvider.
 func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams params.BootstrapInstance) (params.ProviderInstance, error) {
-
+	slog.Info(fmt.Sprintf("Create instance: %s", bootstrapParams.Name))
 	if h.GarmConfig == nil {
 		return params.ProviderInstance{}, fmt.Errorf("provider config cannot be nil")
 	}
@@ -225,6 +238,7 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if runnerTool == (params.RunnerApplicationDownload{}) {
 		return params.ProviderInstance{}, fmt.Errorf("no tools found for %s %s", gitArch, string(bootstrapParams.OSType))
 	}
+	slog.Info(fmt.Sprintf("%s: got tools", bootstrapParams.Name))
 
 	// Cloud init setup
 	userData, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
@@ -252,17 +266,22 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 			UserData:      userData,
 		}
 	}
+	slog.Info(fmt.Sprintf("%s: cloud-init ready", bootstrapParams.Name))
 
 	// Resolve image's name `harvester-public/ubunut24` to storageclass name.
 	backingImage, err := h.getBackingImageName(ctx, bootstrapParams.Image)
 	if err != nil {
+		slog.Info(fmt.Sprintf("%s: failed to find image %s %s: %s", bootstrapParams.Name, bootstrapParams.Image, backingImage, err.Error()))
 		return params.ProviderInstance{}, err
 	}
 	
 	storageClass, err := h.getStorageClass(ctx, backingImage)
 	if err != nil {
+		slog.Info(fmt.Sprintf("%s: failed to find storage class %s %s: %s", bootstrapParams.Name, backingImage, storageClass, err.Error()))
 		return params.ProviderInstance{}, err
 	}
+	slog.Info(fmt.Sprintf("%s: boot image resolved", bootstrapParams.Name))
+
 
 	// Boot Disk
 	pvcOption := &builder.PersistentVolumeClaimOption{
@@ -296,6 +315,8 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
+	slog.Info(fmt.Sprintf("%s: instance created", bootstrapParams.Name))
+
 
 	// Create cloud-init secret
 	if cloudConfigSecret.Data != nil {
@@ -312,6 +333,8 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 			return params.ProviderInstance{}, err
 		}
 	}
+	slog.Info(fmt.Sprintf("%s: sucess exiting", bootstrapParams.Name))
+
 
 	return params.ProviderInstance{
 		ProviderID: string(res.UID),
@@ -327,6 +350,10 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 func (h *HarvesterProvider) DeleteInstance(ctx context.Context, instance string) error {
 	err := h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Delete(ctx, strings.ToLower(instance), v1.DeleteOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			slog.Info(fmt.Sprintf("instance %s not found",instance))
+			return nil
+		}
 		return err
 	}
 	return nil
