@@ -1,3 +1,12 @@
+## Configuring the provider
+
+```toml
+namespace = "garm-runners"
+
+[credentials]
+    kubeconfig = "/etc/kubeconfig/kubeconfig.yaml"
+```
+
 ## Tweaking the provider
 
 ```json

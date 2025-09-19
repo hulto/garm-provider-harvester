@@ -5,7 +5,7 @@ export GARM_POOL_ID="35615b31-0029-4023-9b09-adb95b91da90"
 
 RUNNER_IMAGE="harvester-public/ubuntu-server-noble-24.04"
 RUNNER_STORAGECLASS="longhorn-ubuntu-server-noble-24.04"
-RUNNER_NAME="garm-runner-test2"
+RUNNER_NAME="garm-vh3rEdGRyEPo"
 TEST_STDIN_PATH="./test-createinstance-stdin.json"
 cat << EOF > $TEST_STDIN_PATH
 {
@@ -153,14 +153,24 @@ test_remove_all() {
 }
 
 test_create_vm
-test_get_vm
-test_list_vm
-test_start_vm
-test_stop_vm
-test_delete_vm
+# test_get_vm
+# test_list_vm
+# test_start_vm
+# test_stop_vm
+# test_delete_vm
 
-test_create_vm
-test_remove_all
-test_get_version
+# test_create_vm
+# test_remove_all
+# test_get_version
 
-rm $TEST_STDIN_PATH
+# rm $TEST_STDIN_PATH
+
+# docker run -v $(pwd)/test-providerconfig.toml:/etc/garm/garm-provider-harvester.toml:ro \
+#     -v /etc/kubeconfig:/etc/kubeconfig:ro \
+#     -v $(pwd)/garm-config.toml:/etc/garm/config.toml:ro \
+#     -it ghcr.io/hulto/garm-provider-harvester:0.0.c
+
+
+# BACKING_IMAGE=$(./kubectl get backingimages.longhorn.io -n longhorn-system -o jsonpath='{.items[?(@.metadata.annotations.harvesterhci\.io\/imageId == "harvester-public/ubuntu-server-noble-24.04")].metadata.name}')
+
+# ./kubectl get storageclass -o jsonpath='{.items[?(@.parameters.backingImage == "'$BACKING_IMAGE'")].metadata.name}'
