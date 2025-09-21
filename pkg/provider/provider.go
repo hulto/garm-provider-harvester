@@ -360,13 +360,13 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	}
 	slog.Info(fmt.Sprintf("%s: sucess exiting", bootstrapParams.Name))
 
-
+	// params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)])
 	return params.ProviderInstance{
 		ProviderID: string(res.UID),
 		Name:       res.Name,
 		OSArch:     params.OSArch(res.Spec.Template.Spec.Architecture),
 		OSType:     params.OSType(params.OSType(vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, osTypeConst)])),
-		Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
+		Status:     "running",
 	}, nil
 }
 
@@ -481,13 +481,13 @@ func (h *HarvesterProvider) Start(ctx context.Context, instance string) error {
 		return err
 	}
 	vmCopy := vm.DeepCopy()
-	runStrategy := kubevirtv1.RunStrategyRerunOnFailure
+	runStrategy := kubevirtv1.RunStrategyAlways
 	vmCopy.Spec.RunStrategy = &runStrategy
 	if !reflect.DeepEqual(vm, vmCopy) {
 		_, err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Update(ctx, vmCopy, v1.UpdateOptions{})
 		return err
 	}
-	return nil
+	return fmt.Errorf("VM runstrategy is already set to %s", runStrategy)
 }
 
 // Stop implements executionv011.ExternalProvider.
@@ -504,5 +504,5 @@ func (h *HarvesterProvider) Stop(ctx context.Context, instance string, force boo
 		_, err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Update(ctx, vmCopy, v1.UpdateOptions{})
 		return err
 	}
-	return nil
+	return fmt.Errorf("VM runstrategy is already set to %s", runStrategy)
 }
