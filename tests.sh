@@ -5,7 +5,7 @@ export GARM_POOL_ID="35615b31-0029-4023-9b09-adb95b91da90"
 
 RUNNER_IMAGE="harvester-public/ubuntu-server-noble-24.04"
 RUNNER_STORAGECLASS="longhorn-ubuntu-server-noble-24.04"
-RUNNER_NAME="garm-vh3rEdGRyEPo"
+RUNNER_NAME="garm-FcsOAwWBYJmL"
 TEST_STDIN_PATH="./test-createinstance-stdin.json"
 cat << EOF > $TEST_STDIN_PATH
 {
@@ -152,7 +152,7 @@ test_remove_all() {
     unset GARM_COMMAND
 }
 
-test_create_vm
+# test_create_vm
 # test_get_vm
 # test_list_vm
 # test_start_vm
@@ -160,7 +160,7 @@ test_create_vm
 # test_delete_vm
 
 # test_create_vm
-# test_remove_all
+test_remove_all
 # test_get_version
 
 # rm $TEST_STDIN_PATH

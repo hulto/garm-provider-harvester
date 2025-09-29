@@ -128,11 +128,11 @@ func ParseFlavor(flavor string) (cpu_count int, memory string, disksize string, 
 		return 0, "", "", err
 	}
 
-	if !strings.HasSuffix(parts[2], "Mi") || !strings.HasSuffix(parts[2], "Gi") {
+	if !strings.HasSuffix(parts[2], "Mi") && !strings.HasSuffix(parts[2], "Gi") {
 		return 0, "", "", fmt.Errorf("unkwon memory format %s", parts[2])
 	}
 
-	if !strings.HasSuffix(parts[3], "Mi") || !strings.HasSuffix(parts[3], "Gi") {
+	if !strings.HasSuffix(parts[3], "Mi") && !strings.HasSuffix(parts[3], "Gi") {
 		return 0, "", "", fmt.Errorf("unkwon disk format %s", parts[2])
 	}
 
