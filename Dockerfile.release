@@ -1,4 +1,4 @@
-FROM ghcr.io/cloudbase/garm:v0.1.6@sha256:d13499ea49f7a0433ac2085205bd82498b9411977d32805eec115aab833ebcd8 AS release
+FROM ghcr.io/cloudbase/garm:nightly@sha256:acd527ab90448e1b72b639b201ace7af27e8fcb49384c094dadd1aa6e1ac4f58 AS release
 ARG rev
 COPY build/$rev/linux/amd64/garm-provider-harvester /opt/garm/providers.d/garm-provider-harvester
 RUN chmod 755 /opt/garm/providers.d/garm-provider-harvester

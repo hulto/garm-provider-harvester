@@ -4,7 +4,11 @@ export GARM_CONTROLLER_ID="1ce5d837-9d7a-4860-a05a-d29c30197673"
 export GARM_POOL_ID="35615b31-0029-4023-9b09-adb95b91da90"
 
 RUNNER_IMAGE="harvester-public/ubuntu-server-noble-24.04"
+RUNNER_IMAGE="harvester-public/windows-2025-runner"
 RUNNER_STORAGECLASS="longhorn-ubuntu-server-noble-24.04"
+RUNNER_STORAGECLASS="longhorn-windows-2025-runner"
+OS_TYPE="windows"
+FLAVOR="custom-4c-16Gi-164Gi"
 RUNNER_NAME="garm-FcsOAwWBYJmL"
 TEST_STDIN_PATH="./test-createinstance-stdin.json"
 cat << EOF > $TEST_STDIN_PATH
@@ -26,7 +30,7 @@ cat << EOF > $TEST_STDIN_PATH
       "sha256_checksum": "147c14700c6cb997421b9a239c012197f11ea9854cd901ee88ead6fe73a72c74"
     },
     {
-      "os": "win",
+      "os": "windows",
       "architecture": "x64",
       "download_url": "https://github.com/actions/runner/releases/download/v2.299.1/actions-runner-win-x64-2.299.1.zip",
       "filename": "actions-runner-win-x64-2.299.1.zip",
@@ -54,7 +58,7 @@ cat << EOF > $TEST_STDIN_PATH
       "sha256_checksum": "f73849b9a78459d2e08b9d3d2f60464a55920de120e228b0645b01abe68d9072"
     },
     {
-      "os": "win",
+      "os": "windows",
       "architecture": "arm64",
       "download_url": "https://github.com/actions/runner/releases/download/v2.299.1/actions-runner-win-arm64-2.299.1.zip",
       "filename": "actions-runner-win-arm64-2.299.1.zip",
@@ -66,16 +70,19 @@ cat << EOF > $TEST_STDIN_PATH
   "metadata-url": "https://garm.example.com/api/v1/metadata",
   "instance-token": "super secret JWT token",
   "extra_specs": {
-    "my_custom_config": "some_value"
+    "network_name": "harvester-public/harvester-public-net",
+    "network_adapter_type": "e1000",
+    "network_type": "bridge",
+    "disk_connector_type": "sata"
   },
   "ssh-keys": [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMOTygNEK4LTfZwV1Pqf9vX5AECGXDe3paaFhiJsJvUU hulto@axe.local"
   ],
   "ca-cert-bundle": null,
   "github-runner-group": "my_group",
-  "os_type": "linux",
+  "os_type": "$OS_TYPE",
   "arch": "amd64",
-  "flavor": "medium",
+  "flavor": "$FLAVOR",
   "image": "$RUNNER_IMAGE",
   "labels": [
     "ubuntu",
@@ -152,18 +159,18 @@ test_remove_all() {
     unset GARM_COMMAND
 }
 
-# test_create_vm
-# test_get_vm
-# test_list_vm
-# test_start_vm
-# test_stop_vm
-# test_delete_vm
+test_create_vm
+test_get_vm
+test_list_vm
+test_start_vm
+test_stop_vm
+test_delete_vm
 
-# test_create_vm
+test_create_vm
 test_remove_all
-# test_get_version
+test_get_version
 
-# rm $TEST_STDIN_PATH
+rm $TEST_STDIN_PATH
 
 # docker run -v $(pwd)/test-providerconfig.toml:/etc/garm/garm-provider-harvester.toml:ro \
 #     -v /etc/kubeconfig:/etc/kubeconfig:ro \
