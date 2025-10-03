@@ -160,15 +160,15 @@ test_remove_all() {
 }
 
 test_create_vm
-# test_get_vm
-# test_list_vm
-# test_start_vm
-# test_stop_vm
-# test_delete_vm
+test_get_vm
+test_list_vm
+test_start_vm
+test_stop_vm
+test_delete_vm
 
-# test_create_vm
-# test_remove_all
-# test_get_version
+test_create_vm
+test_remove_all
+test_get_version
 
 rm $TEST_STDIN_PATH
 
