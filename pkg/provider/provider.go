@@ -172,9 +172,7 @@ type ImageList struct {
 // /kubectl get virtualmachineimages.harvesterhci.io -n harvester-public -o jsonpath='{.items[?(@.metadata.labels.harvesterhci\.io\/imageDisplayName == "ubuntu-server-noble-24.04")].status.storageClassName}' 
 func (h *HarvesterProvider) getStorageClass(ctx context.Context, imageName string) (string, error) {
 	ns := strings.Split(imageName, "/")[0]
-	slog.Info(fmt.Sprintf("ns: %s", ns))
 	name := strings.Join(strings.Split(imageName, "/")[1:], "/")
-	slog.Info(fmt.Sprintf("names: %s", name))
 	l, err := h.KubeClient.RESTClient().Get().AbsPath(fmt.Sprintf("/apis/harvesterhci.io/v1beta1/namespaces/%s/virtualmachineimages", ns)).DoRaw(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to query storage class for backingimage %s: %s", name, err)
@@ -184,9 +182,7 @@ func (h *HarvesterProvider) getStorageClass(ctx context.Context, imageName strin
 		return "", fmt.Errorf("failed to unmarshal imagelist JSON for %s: %s", imageName, err)
 	}
 	for _, img := range imagesList.Items {
-		slog.Info(fmt.Sprintf("name: %s", img.Metadata.Name))
 		if img.Metadata.Name == name {
-			slog.Info(fmt.Sprintf("storageclassname: %s", img.Status.StorageClassName))
 			return img.Status.StorageClassName, nil
 		}
 	}
@@ -199,6 +195,33 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	slog.Info(fmt.Sprintf("Create instance: %s", bootstrapParams.Name))
 	if h.GarmConfig == nil {
 		return params.ProviderInstance{}, fmt.Errorf("provider config cannot be nil")
+	}
+
+	extraSpec := &config.HarvesterExtraSpec{}
+	if err := json.Unmarshal(bootstrapParams.ExtraSpecs, &extraSpec); err != nil {
+		return params.ProviderInstance{}, fmt.Errorf("failed to unmarshal extra spec JSON for %s: %s", bootstrapParams.Name, err)
+	}
+	err := extraSpec.Validate()
+	if err != nil {
+		return params.ProviderInstance{}, fmt.Errorf("failed to validate extra spec for %s: %s", bootstrapParams.Name, err)
+	}
+
+	// Set defaults
+	var networkName = "mgmt"
+	if extraSpec.NetworkName != "" {
+		networkName = extraSpec.NetworkName
+	}
+	var networkAdapterType = "virtio"
+	if extraSpec.NetworkAdapterType != "" {
+		networkAdapterType = extraSpec.NetworkAdapterType
+	}
+	var networkType = "masquerade"
+	if extraSpec.NetworkType != "" {
+		networkType = extraSpec.NetworkType
+	}
+	var diskConnectorType = "virtio"
+	if extraSpec.DiskConnectorType != "" {
+		diskConnectorType = extraSpec.DiskConnectorType
 	}
 
 	// Get resources
@@ -259,7 +282,7 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 		}
 	}
 	slog.Info(fmt.Sprintf("%s: cloud-init ready", bootstrapParams.Name))
-	
+
 	storageClass, err := h.getStorageClass(ctx, bootstrapParams.Image)
 	if err != nil {
 		slog.Info(fmt.Sprintf("%s: failed to find storage class %s %s: %s", bootstrapParams.Name, bootstrapParams.Image, storageClass, err.Error()))
@@ -280,9 +303,9 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	}
 
 	// Build VM
-	vmBuilder := builder.NewVMBuilder("garm-provider").NetworkInterface("nic-0", "virtio", "", "masquerade", "").
+	vmBuilder := builder.NewVMBuilder("garm-provider").NetworkInterface("nic-0", networkAdapterType, "", networkType, networkName).
 		Namespace(h.GarmConfig.Namespace).Name(strings.ToLower(bootstrapParams.Name)).CPU(cores).Memory(memory).
-		PVCDisk("rootdisk", builder.DiskBusVirtio, false, false, 1, disk, "", pvcOption).
+		PVCDisk("rootdisk", diskConnectorType, false, false, 1, disk, "", pvcOption).
 		CloudInitDisk(builder.CloudInitDiskName, builder.DiskBusVirtio, false, 0, cloudInitSource).
 		EvictionStrategy(true).RunStrategy(kubevirtv1.RunStrategyRerunOnFailure).Labels(labels)
 

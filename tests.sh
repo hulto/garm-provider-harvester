@@ -8,6 +8,7 @@ RUNNER_IMAGE="harvester-public/windows-2025-runner"
 RUNNER_STORAGECLASS="longhorn-ubuntu-server-noble-24.04"
 RUNNER_STORAGECLASS="longhorn-windows-2025-runner"
 OS_TYPE="windows"
+FLAVOR="custom-4c-16Gi-164Gi"
 RUNNER_NAME="garm-FcsOAwWBYJmL"
 TEST_STDIN_PATH="./test-createinstance-stdin.json"
 cat << EOF > $TEST_STDIN_PATH
@@ -69,8 +70,9 @@ cat << EOF > $TEST_STDIN_PATH
   "metadata-url": "https://garm.example.com/api/v1/metadata",
   "instance-token": "super secret JWT token",
   "extra_specs": {
-    "network_name": "public",
+    "network_name": "harvester-public/harvester-public-net",
     "network_adapter_type": "e1000",
+    "network_type": "bridge",
     "disk_connector_type": "sata"
   },
   "ssh-keys": [
@@ -80,7 +82,7 @@ cat << EOF > $TEST_STDIN_PATH
   "github-runner-group": "my_group",
   "os_type": "$OS_TYPE",
   "arch": "amd64",
-  "flavor": "medium",
+  "flavor": "$FLAVOR",
   "image": "$RUNNER_IMAGE",
   "labels": [
     "ubuntu",
@@ -168,7 +170,7 @@ test_create_vm
 # test_remove_all
 # test_get_version
 
-# rm $TEST_STDIN_PATH
+rm $TEST_STDIN_PATH
 
 # docker run -v $(pwd)/test-providerconfig.toml:/etc/garm/garm-provider-harvester.toml:ro \
 #     -v /etc/kubeconfig:/etc/kubeconfig:ro \
