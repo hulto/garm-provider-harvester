@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	slog.Info(fmt.Sprintf("executionEnv.ProviderConfigFile: %s", executionEnv.ProviderConfigFile))
+	slog.Debug(fmt.Sprintf("executionEnv.ProviderConfigFile: %s", executionEnv.ProviderConfigFile))
 
 	provConfig, err := config.NewProviderConfig(executionEnv.ProviderConfigFile)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"garm-provider-harvester/pkg/config"
 	"garm-provider-harvester/pkg/utils"
 	"log/slog"
+	"os"
 	"reflect"
 	"strings"
 
@@ -15,7 +16,7 @@ import (
 	harvnetworkclient "github.com/harvester/harvester-network-controller/pkg/generated/clientset/versioned"
 	harvclient "github.com/harvester/harvester/pkg/generated/clientset/versioned"
 	"github.com/mitchellh/go-homedir"
-	"github.com/rancher/wrangler/pkg/kubeconfig"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	kubeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	storageclient "k8s.io/client-go/kubernetes/typed/storage/v1"
@@ -35,6 +36,7 @@ import (
 const (
 	osTypeConst = "os-type"
 	poolIdConst = "pool-id"
+	controllerIdConst = "controller-id"
 )
 
 type HarvesterProvider struct {
@@ -53,7 +55,7 @@ var Version = "v0.0.0-unknown"
 func restConfigFromBase64(kubeConfigBase64 string) (*rest.Config, error) {
 	bytes, err := base64.StdEncoding.DecodeString(kubeConfigBase64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode base64 string with error: %s", err.Error())
 	}
 	return clientcmd.RESTConfigFromKubeConfig(bytes)
 }
@@ -64,7 +66,16 @@ func restConfigFromFile(kubeConfig string) (*rest.Config, error) {
 		return nil, err
 	}
 
-	clientConfig := kubeconfig.GetNonInteractiveClientConfig(clientConfigPath)
+	data, err := os.ReadFile(clientConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read kubeconfig %.80s with error: %s", kubeConfig, err.Error())
+	}
+
+	clientConfig, err := clientcmd.NewClientConfigFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config from %.80s with error: %s", kubeConfig, err.Error())
+	}
+
 	return clientConfig.ClientConfig()
 }
 
@@ -75,14 +86,16 @@ func NewHarvesterProvider(config config.Config, garmControllerId string) (execut
 		restConfig *rest.Config
 		err        error
 	)
-
+	slog.Debug(fmt.Sprintf("Creating new harvester provider: %s", garmControllerId))
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("error validating config: %w", err)
 	}
 
 	kubeConfig := config.Credentials.KubeConfig
 	if restConfig, err = restConfigFromBase64(kubeConfig); err != nil {
+		slog.Debug("Not base64")
 		if restConfig, err = restConfigFromFile(kubeConfig); err != nil {
+			slog.Debug("Not file")
 			return nil, err
 		}
 	}
@@ -138,61 +151,52 @@ func (h HarvesterProvider) ListInstances(ctx context.Context, poolID string) ([]
 	return res, nil
 }
 
-type ImageMetadataAnnotations struct {
-	ImageId string `json:"harvesterhci.io/imageId"`
+
+type ImageMetadataStatus struct {
+	StorageClassName string				`json:"storageClassName"`
 }
 
-type ImageMetadata struct {
-	Annotations ImageMetadataAnnotations `json:"annotations"`
-	Name        string                   `json:"name"`
+type ItemMetadata struct {
+	Name string							`json:"name"`
 }
 
-type Image struct {
-	Metadata ImageMetadata `json:"metadata"`
+type Item struct {
+	Status ImageMetadataStatus			`json:"status"`
+	Metadata ItemMetadata 				`json:"metadata"`
 }
 
 type ImageList struct {
-	Items []Image `json:"items"`
+	Items []Item 						`json:"items"`
 }
 
-func (h *HarvesterProvider) getBackingImageName(ctx context.Context, imageName string) (string, error) {
-	l, err := h.KubeClient.RESTClient().Get().AbsPath("/apis/longhorn.io/v1beta2/namespaces/longhorn-system/backingimages").DoRaw(ctx)
+// /kubectl get virtualmachineimages.harvesterhci.io -n harvester-public -o jsonpath='{.items[?(@.metadata.labels.harvesterhci\.io\/imageDisplayName == "ubuntu-server-noble-24.04")].status.storageClassName}' 
+func (h *HarvesterProvider) getStorageClass(ctx context.Context, imageName string) (string, error) {
+	ns := strings.Split(imageName, "/")[0]
+	slog.Info(fmt.Sprintf("ns: %s", ns))
+	name := strings.Join(strings.Split(imageName, "/")[1:], "/")
+	slog.Info(fmt.Sprintf("names: %s", name))
+	l, err := h.KubeClient.RESTClient().Get().AbsPath(fmt.Sprintf("/apis/harvesterhci.io/v1beta1/namespaces/%s/virtualmachineimages", ns)).DoRaw(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to query storage class for backingimage %s: %s", name, err)
 	}
 	imagesList := &ImageList{}
 	if err := json.Unmarshal(l, &imagesList); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal imagelist JSON for %s: %s", imageName, err)
 	}
 	for _, img := range imagesList.Items {
-		if img.Metadata.Annotations.ImageId == imageName {
-			return img.Metadata.Name, nil
+		slog.Info(fmt.Sprintf("name: %s", img.Metadata.Name))
+		if img.Metadata.Name == name {
+			slog.Info(fmt.Sprintf("storageclassname: %s", img.Status.StorageClassName))
+			return img.Status.StorageClassName, nil
 		}
 	}
-	return "", fmt.Errorf("unable to find backing image for %s", imageName)
-}
-
-func (h *HarvesterProvider) getStorageClass(ctx context.Context, backingImage string) (string, error) {
-	sc, err := h.KubeClient.StorageV1().StorageClasses().List(ctx, v1.ListOptions{})
-	if err != nil {
-		return "", err
-	}
-	for _, s := range sc.Items {
-		val, ok := s.Parameters["backingImage"]
-		if ok {
-			if val == backingImage{
-				slog.Info(fmt.Sprintf("sc: %s", s.ObjectMeta.Name))
-				return s.GetObjectMeta().GetName(), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("backing image %s not found", backingImage)
+	return "", fmt.Errorf("backing image %s not found", imageName)
 }
 
 
 // CreateInstance implements executionv011.ExternalProvider.
 func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams params.BootstrapInstance) (params.ProviderInstance, error) {
-
+	slog.Info(fmt.Sprintf("Create instance: %s", bootstrapParams.Name))
 	if h.GarmConfig == nil {
 		return params.ProviderInstance{}, fmt.Errorf("provider config cannot be nil")
 	}
@@ -207,6 +211,7 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	labels := map[string]string{
 		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, osTypeConst): string(bootstrapParams.OSType),
 		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, poolIdConst): bootstrapParams.PoolID,
+		fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, controllerIdConst): h.ControllerID,
 	}
 
 	// get tool
@@ -225,6 +230,7 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if runnerTool == (params.RunnerApplicationDownload{}) {
 		return params.ProviderInstance{}, fmt.Errorf("no tools found for %s %s", gitArch, string(bootstrapParams.OSType))
 	}
+	slog.Info(fmt.Sprintf("%s: got tools", bootstrapParams.Name))
 
 	// Cloud init setup
 	userData, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
@@ -252,17 +258,15 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 			UserData:      userData,
 		}
 	}
-
-	// Resolve image's name `harvester-public/ubunut24` to storageclass name.
-	backingImage, err := h.getBackingImageName(ctx, bootstrapParams.Image)
-	if err != nil {
-		return params.ProviderInstance{}, err
-	}
+	slog.Info(fmt.Sprintf("%s: cloud-init ready", bootstrapParams.Name))
 	
-	storageClass, err := h.getStorageClass(ctx, backingImage)
+	storageClass, err := h.getStorageClass(ctx, bootstrapParams.Image)
 	if err != nil {
+		slog.Info(fmt.Sprintf("%s: failed to find storage class %s %s: %s", bootstrapParams.Name, bootstrapParams.Image, storageClass, err.Error()))
 		return params.ProviderInstance{}, err
 	}
+	slog.Info(fmt.Sprintf("%s: boot image resolved", bootstrapParams.Name))
+
 
 	// Boot Disk
 	pvcOption := &builder.PersistentVolumeClaimOption{
@@ -296,6 +300,8 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
+	slog.Info(fmt.Sprintf("%s: instance created", bootstrapParams.Name))
+
 
 	// Create cloud-init secret
 	if cloudConfigSecret.Data != nil {
@@ -312,32 +318,86 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 			return params.ProviderInstance{}, err
 		}
 	}
+	slog.Info(fmt.Sprintf("%s: sucess exiting", bootstrapParams.Name))
 
+	// params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)])
 	return params.ProviderInstance{
-		ProviderID: string(res.UID),
+		ProviderID: strings.ToLower(bootstrapParams.Name),
 		Name:       res.Name,
 		OSArch:     params.OSArch(res.Spec.Template.Spec.Architecture),
 		OSType:     params.OSType(params.OSType(vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, osTypeConst)])),
-		Status:     params.InstanceStatus(utils.StatusMap[string(vm.Status.PrintableStatus)]),
+		Status:     "running",
 	}, nil
 }
 
 
+func  (h *HarvesterProvider) vpcsToRemove(ctx context.Context, vm *kubevirtv1.VirtualMachine) ([]string, error) {
+	deleteConfigs := make(map[string]bool)
+	removedPVCs := make([]string, 0, len(vm.Spec.Template.Spec.Volumes))
+	for _, volume := range vm.Spec.Template.Spec.Volumes {
+		if volume.PersistentVolumeClaim == nil {
+			continue
+		}
+		if autoDelete, ok := deleteConfigs[volume.Name]; ok && !autoDelete {
+			continue
+		}
+
+		// h.KubeClient.StorageV1().VolumeAttachments().Delete(ctx, volume.Att)
+
+		removedPVCs = append(removedPVCs, volume.PersistentVolumeClaim.ClaimName)
+	}
+	return removedPVCs, nil
+}
 // DeleteInstance implements executionv011.ExternalProvider.
 func (h *HarvesterProvider) DeleteInstance(ctx context.Context, instance string) error {
-	err := h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Delete(ctx, strings.ToLower(instance), v1.DeleteOptions{})
+	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Get(ctx, strings.ToLower(instance), v1.GetOptions{})
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("instance %s not found: %s", strings.ToLower(instance), err.Error())
+		}
 		return err
 	}
+
+	val, ok := vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, controllerIdConst)]
+	if !ok || val != h.ControllerID {
+		return fmt.Errorf("found instance %s but doesn't have label %s/%s=%s", strings.ToLower(instance), utils.HarvesterAPIGroup, controllerIdConst, h.ControllerID)
+	}
+
+	pvcsToRemove, err := h.vpcsToRemove(ctx, vm)
+	if err != nil {
+			return fmt.Errorf("failed to find vpcs for %s: %s", strings.ToLower(instance), err.Error())
+	}
+
+
+	propagationPolicy := v1.DeletePropagationForeground
+	deleteOptions := v1.DeleteOptions{PropagationPolicy: &propagationPolicy}
+	err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Delete(ctx, strings.ToLower(instance), deleteOptions)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			slog.Info(fmt.Sprintf("instance %s not found",instance))
+			return nil
+		}
+		return err
+	}
+
+	for _, pvc := range pvcsToRemove {
+		propagationPolicy := v1.DeletePropagationForeground
+		deleteOptions := v1.DeleteOptions{PropagationPolicy: &propagationPolicy}
+		err := h.KubeClient.CoreV1().PersistentVolumeClaims(h.GarmConfig.Namespace).Delete(ctx, pvc, deleteOptions)
+		if err != nil {
+			return fmt.Errorf("failed to remove %s pvc %s: %s", instance, pvc, err.Error())
+		}
+	}
+
 	return nil
 }
 
 // GetInstance implements executionv011.ExternalProvider.
 func (h *HarvesterProvider) GetInstance(ctx context.Context, instance string) (params.ProviderInstance, error) {
 	opts := v1.GetOptions{}
-	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachineInstances(h.GarmConfig.Namespace).Get(ctx, instance, opts)
+	vm, err := h.HarvesterClient.KubevirtV1().VirtualMachineInstances(h.GarmConfig.Namespace).Get(ctx, strings.ToLower(instance), opts)
 	if err != nil {
-		return params.ProviderInstance{}, err
+		return params.ProviderInstance{}, fmt.Errorf("failed to get instance %s: %s", strings.ToLower(instance), err.Error())
 	}
 	return utils.HarvesterVmToInstance(vm), nil
 }
@@ -352,12 +412,32 @@ func (h *HarvesterProvider) RemoveAllInstances(ctx context.Context) error {
 	opts := v1.ListOptions{}
 	vms, err := h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).List(ctx, opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get VM list for NS %s: %s", h.GarmConfig.Namespace, err.Error())
 	}
 	for _, vm := range vms.Items {
+		val, ok := vm.Labels[fmt.Sprintf("%s/%s", utils.HarvesterAPIGroup, controllerIdConst)]
+		if !ok || val != h.ControllerID {
+			slog.Debug(fmt.Sprintf("found instance %s but doesn't have label %s/%s=%s", strings.ToLower(vm.Name), utils.HarvesterAPIGroup, controllerIdConst, h.ControllerID))
+			continue
+		}
+
+		pvcsToRemove, err := h.vpcsToRemove(ctx, &vm)
+		if err != nil {
+			return fmt.Errorf("failed to find vpcs for: %s", err.Error())
+		}
+
 		err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Delete(ctx, vm.Name, v1.DeleteOptions{})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to delete virtual machine %s: %s", vm.Name, err.Error())
+		}
+
+		for _, pvc := range pvcsToRemove {
+			propagationPolicy := v1.DeletePropagationForeground
+			deleteOptions := v1.DeleteOptions{PropagationPolicy: &propagationPolicy}
+			err := h.KubeClient.CoreV1().PersistentVolumeClaims(h.GarmConfig.Namespace).Delete(ctx, pvc, deleteOptions)
+			if err != nil {
+				return fmt.Errorf("failed to remove %s pvc %s: %s", vm.Name, pvc, err.Error())
+			}
 		}
 	}
 	return nil
@@ -371,13 +451,13 @@ func (h *HarvesterProvider) Start(ctx context.Context, instance string) error {
 		return err
 	}
 	vmCopy := vm.DeepCopy()
-	runStrategy := kubevirtv1.RunStrategyRerunOnFailure
+	runStrategy := kubevirtv1.RunStrategyAlways
 	vmCopy.Spec.RunStrategy = &runStrategy
 	if !reflect.DeepEqual(vm, vmCopy) {
 		_, err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Update(ctx, vmCopy, v1.UpdateOptions{})
 		return err
 	}
-	return nil
+	return fmt.Errorf("VM runstrategy is already set to %s", runStrategy)
 }
 
 // Stop implements executionv011.ExternalProvider.
@@ -394,5 +474,5 @@ func (h *HarvesterProvider) Stop(ctx context.Context, instance string, force boo
 		_, err = h.HarvesterClient.KubevirtV1().VirtualMachines(h.GarmConfig.Namespace).Update(ctx, vmCopy, v1.UpdateOptions{})
 		return err
 	}
-	return nil
+	return fmt.Errorf("VM runstrategy is already set to %s", runStrategy)
 }
