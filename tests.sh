@@ -4,8 +4,11 @@ export GARM_CONTROLLER_ID="1ce5d837-9d7a-4860-a05a-d29c30197673"
 export GARM_POOL_ID="35615b31-0029-4023-9b09-adb95b91da90"
 
 RUNNER_IMAGE="harvester-public/ubuntu-server-noble-24.04"
+RUNNER_IMAGE="harvester-public/windows-2025-runner"
 RUNNER_STORAGECLASS="longhorn-ubuntu-server-noble-24.04"
 RUNNER_NAME="garm-runner-test2"
+RUNNER_STORAGECLASS="longhorn-windows-2025-runner"
+RUNNER_NAME="garm-FcsOAwWBYJmL"
 TEST_STDIN_PATH="./test-createinstance-stdin.json"
 cat << EOF > $TEST_STDIN_PATH
 {
