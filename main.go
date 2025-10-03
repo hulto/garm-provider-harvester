@@ -17,7 +17,7 @@ import (
 )
 
 func setupLogging() {
-	handlerOptions := slog.HandlerOptions{Level: slog.LevelInfo}
+	handlerOptions := slog.HandlerOptions{Level: slog.LevelDebug}
 	logHandler := slog.NewTextHandler(os.Stderr, &handlerOptions)
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
