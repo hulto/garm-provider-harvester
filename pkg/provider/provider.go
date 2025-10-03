@@ -207,7 +207,7 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	}
 
 	// Set defaults
-	var networkName = "mgmt"
+	var networkName = ""
 	if extraSpec.NetworkName != "" {
 		networkName = extraSpec.NetworkName
 	}
