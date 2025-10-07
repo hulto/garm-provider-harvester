@@ -242,11 +242,17 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	if err != nil {
 		return params.ProviderInstance{}, err
 	}
+	gitOs, err := util.ResolveToGithubOSType(string(bootstrapParams.OSType))
+	if err != nil {
+		return params.ProviderInstance{}, err
+	}
 
 	var runnerTool params.RunnerApplicationDownload
 	for _, tool := range bootstrapParams.Tools {
-		if strings.EqualFold(*tool.OS, string(bootstrapParams.OSType)) &&
-			strings.EqualFold(*tool.Architecture, gitArch) {
+		if (strings.EqualFold(*tool.OS, gitOs) || 
+				strings.EqualFold(*tool.OS, string(bootstrapParams.OSType))) &&
+			(strings.EqualFold(*tool.Architecture, gitArch) || 
+				strings.EqualFold(*tool.Architecture, string(bootstrapParams.OSArch))) {
 			runnerTool = tool
 		}
 	}
@@ -259,6 +265,12 @@ func (h *HarvesterProvider) CreateInstance(ctx context.Context, bootstrapParams 
 	userData, err := cloudconfig.GetCloudConfig(bootstrapParams, runnerTool, bootstrapParams.Name)
 	if err != nil {
 		return params.ProviderInstance{}, err
+	}
+	if bootstrapParams.OSType == params.Windows {
+		if !strings.HasPrefix(userData, "#ps1_sysnative") {
+			prefix := "#ps1_sysnative\n"
+			userData = fmt.Sprintf("%s%s", prefix, userData)
+		}
 	}
 	var cloudConfigSecret corev1.Secret
 	var cloudInitSource builder.CloudInitSource
